@@ -3,3 +3,5 @@ pymongo
 flask_cors
 tinydb
 fitz
+google-generativeai
+python-dotenv
