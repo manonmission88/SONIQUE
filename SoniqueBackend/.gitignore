@@ -1,4 +1,5 @@
 .env
+<<<<<<< HEAD
 .DS_STORE
 node_modules/
 build/
@@ -8,3 +9,24 @@ coverage/
 *.log.*
 *.log-*
 *.log/*
+=======
+__pyac
+
+# Python virtual environments
+venv/
+ENV/
+.pyenv/
+
+# Compiled Python files
+*.py[cod]
+__pycache__/
+
+# Editor directories
+.vscode/
+.idea/
+
+# Log and temporary files
+*.log
+tmp/
+uploads/
+>>>>>>> origin/main
