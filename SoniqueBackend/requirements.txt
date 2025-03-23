@@ -2,6 +2,6 @@ flask
 pymongo
 flask_cors
 tinydb
-fitz
+PyMuPDF
 google-generativeai
 python-dotenv
