@@ -167,6 +167,7 @@ class CustomFileManager: ObservableObject {
     @Published var isFileSelected: Bool = false
     @Published var showAlert: Bool = false
     @Published var alertMessage: String = ""
+    @Published var uploadedFiles: [(url: URL, date: Date)] = []
     
     func loadFile(from url: URL) {
         do {
@@ -176,6 +177,9 @@ class CustomFileManager: ObservableObject {
                     self.fileContent = content
                     self.selectedFile = url
                     self.isFileSelected = true
+                    if !self.uploadedFiles.contains(where: { $0.url == url }) {
+                        self.uploadedFiles.append((url: url, date: Date()))
+                    }
                 }
             }
         } catch {
@@ -183,34 +187,74 @@ class CustomFileManager: ObservableObject {
             alertMessage = "Error loading file: \(error.localizedDescription)"
         }
     }
+    
+    func removeFile(_ url: URL) {
+        uploadedFiles.removeAll { $0.url == url }
+        if selectedFile == url {
+            selectedFile = nil
+            fileContent = ""
+            isFileSelected = false
+        }
+    }
+    
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
 }
 
 struct ContentView: View {
     @StateObject private var speechManager = SpeechManager()
     @StateObject private var fileManager = CustomFileManager()
     @State private var showingDocumentPicker = false
+    @State private var isPressed = false
+    @State private var selectedFileIndex: Int?
+    @State private var showingAllFiles = false
     
     var body: some View {
-        VStack(spacing: 30) {
-            // Mode Toggle Button
+        VStack(spacing: 20) {
+            // Simplified Mode Toggle Button
             Button(action: {
-                speechManager.toggleMode()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    speechManager.toggleMode()
+                }
             }) {
-                Text("Switch to \(speechManager.isKidMode ? "Parent" : "Kid") Mode")
-                    .font(.system(size: 18))
-                    .padding()
-                    .background(speechManager.isKidMode ? Color.blue : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
+                HStack(spacing: 12) {
+                    Image(systemName: speechManager.isKidMode ? "person.fill" : "person.2.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                    
+                    Text(speechManager.isKidMode ? "Kid Mode" : "Parent Mode")
+                        .font(.system(size: 17, weight: .bold))
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 25)
+                        .fill(speechManager.isKidMode ? Color.blue : Color.green)
+                        .shadow(color: speechManager.isKidMode ? Color.blue.opacity(0.3) : Color.green.opacity(0.3), radius: 10)
+                )
+                .foregroundColor(.white)
             }
+            .buttonStyle(PressableButtonStyle(isPressed: $isPressed))
             .accessibilityLabel("Mode toggle button")
             .accessibilityHint("Double tap to switch between kid and parent mode")
-            .padding(.top)
+            .padding(.top, 20)
             
             Text("Sonique")
-                .font(.system(size: 40, weight: .bold))
-                .foregroundColor(.blue)
-                .padding(.top, 20)
+                .font(.system(size: 45, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            speechManager.isKidMode ? Color.blue : Color.green,
+                            speechManager.isKidMode ? Color.blue.opacity(0.7) : Color.green.opacity(0.7)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .padding(.top, 10)
                 .accessibilityAddTraits(.isHeader)
             
             // File Selection Button (Only in Parent Mode)
@@ -220,59 +264,118 @@ struct ContentView: View {
                 }) {
                     HStack {
                         Image(systemName: "doc.badge.plus")
-                        Text("Upload Content")
+                        Text("Upload New Content")
                     }
                     .font(.system(size: 18))
                     .padding()
-                    .background(Color.orange)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .foregroundColor(.white)
-                    .cornerRadius(8)
+                    .cornerRadius(12)
+                    .shadow(color: Color.orange.opacity(0.3), radius: 10)
                 }
-                .accessibilityLabel("Upload content button")
-                .accessibilityHint("Double tap to choose a file to upload")
+                .accessibilityLabel("Upload new content button")
+                .accessibilityHint("Double tap to choose a new file to upload")
             }
             
-            // Display Area
-            ScrollView {
-                VStack(spacing: 20) {
-                    if !speechManager.isKidMode && fileManager.isFileSelected {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Uploaded Content:")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.gray)
-                            
-                            Text(fileManager.selectedFile?.lastPathComponent ?? "")
-                                .font(.system(size: 16))
-                                .foregroundColor(.gray)
-                            
-                            if !fileManager.fileContent.isEmpty {
-                                Text("Content Preview:")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.gray)
-                                    .padding(.top, 10)
-                                
-                                Text(fileManager.fileContent)
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.black)
-                                    .padding()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.gray.opacity(0.1))
-                                    .cornerRadius(10)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
+            // Display Area (Uploaded Content)
+            if !speechManager.isKidMode && fileManager.isFileSelected {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Uploaded Content:")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.gray)
                     
-                    Text(speechManager.recognizedText)
-                        .font(.system(size: 24))
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(15)
+                    ScrollView {
+                        if !fileManager.fileContent.isEmpty {
+                            Text(fileManager.fileContent)
+                                .font(.system(size: 16))
+                                .foregroundColor(.black)
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(10)
+                        }
+                    }
+                    .frame(maxHeight: 200)
                 }
                 .padding(.horizontal)
             }
-            .frame(maxHeight: .infinity)
+            
+            // Uploaded Files Bar (Only in Parent Mode)
+            if !speechManager.isKidMode {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("All Uploaded Files")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            Text("\(fileManager.uploadedFiles.count) files")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                            
+                            Button(action: {
+                                showingAllFiles = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "list.bullet")
+                                    Text("View All")
+                                }
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    if !fileManager.uploadedFiles.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(fileManager.uploadedFiles, id: \.url) { file in
+                                    FileCard(
+                                        fileName: file.url.lastPathComponent,
+                                        date: file.date,
+                                        isSelected: fileManager.selectedFile == file.url,
+                                        onTap: {
+                                            fileManager.loadFile(from: file.url)
+                                            selectedFileIndex = fileManager.uploadedFiles.firstIndex(where: { $0.url == file.url })
+                                        },
+                                        onDelete: {
+                                            fileManager.removeFile(file.url)
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            Spacer()
+            
+            // Speech Recognition Display (Only in Kid Mode)
+            if speechManager.isKidMode {
+                Text(speechManager.recognizedText)
+                    .font(.system(size: 24))
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(15)
+                    .padding(.horizontal)
+            }
             
             // Microphone Button with Overlay (Only in Kid Mode)
             if speechManager.isKidMode {
@@ -317,7 +420,16 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1),
+                    speechManager.isKidMode ? Color.blue.opacity(0.05) : Color.green.opacity(0.05)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .alert("Error", isPresented: $speechManager.showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -345,6 +457,132 @@ struct ContentView: View {
         }
         .onAppear {
             speechManager.requestPermission()
+        }
+        .sheet(isPresented: $showingAllFiles) {
+            AllFilesView(fileManager: fileManager)
+        }
+    }
+}
+
+// Custom Button Style for Press Animation
+struct PressableButtonStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { newValue in
+                isPressed = newValue
+            }
+    }
+}
+
+// File Card View for the horizontal scroll
+struct FileCard: View {
+    let fileName: String
+    let date: Date
+    let isSelected: Bool
+    let onTap: () -> Void
+    let onDelete: () -> Void
+    
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(isSelected ? .white : .gray)
+                    
+                    Text(fileName)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(isSelected ? .white : .gray)
+                        .lineLimit(1)
+                    
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(isSelected ? .white : .gray)
+                    }
+                }
+                
+                Text(dateFormatter.string(from: date))
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .gray.opacity(0.8))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(isSelected ? Color.blue : Color.gray.opacity(0.2))
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// New view for displaying all files
+struct AllFilesView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var fileManager: CustomFileManager
+    @State private var selectedFile: URL?
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(fileManager.uploadedFiles, id: \.url) { file in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(.blue)
+                            
+                            Text(file.url.lastPathComponent)
+                                .font(.system(size: 16, weight: .medium))
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                fileManager.removeFile(file.url)
+                            }) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        
+                        HStack {
+                            Text(fileManager.formatDate(file.date))
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                selectedFile = file.url
+                                fileManager.loadFile(from: file.url)
+                            }) {
+                                Text("View Content")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("All Uploaded Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
