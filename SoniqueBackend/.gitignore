@@ -1,1 +1,20 @@
 .env
+__pyac
+
+# Python virtual environments
+venv/
+ENV/
+.pyenv/
+
+# Compiled Python files
+*.py[cod]
+__pycache__/
+
+# Editor directories
+.vscode/
+.idea/
+
+# Log and temporary files
+*.log
+tmp/
+uploads/
