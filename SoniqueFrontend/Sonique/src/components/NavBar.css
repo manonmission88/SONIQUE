@@ -1,0 +1,18 @@
+.navbar {
+  position: fixed;   /* stay at the top even on scroll */
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #1a73e8; /* example color */
+  color: #fff;
+  padding: 15px 0;
+  text-align: center; /* center the text/logo */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 999;       /* ensure the NavBar stays above other elements */
+}
+
+.navbar-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: bold;
+}

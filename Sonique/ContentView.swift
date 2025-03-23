@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  ContentViewer.swift
 //  Sonique
 //
 //  Created by Manish Niure on 3/22/25.
@@ -9,7 +9,27 @@ import SwiftUI
 import Speech
 import AVFoundation
 import UniformTypeIdentifiers
+import PDFKit
 
+// MARK: - PDFViewer
+struct PDFViewer: UIViewRepresentable {
+    let document: PDFDocument
+
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
+        pdfView.backgroundColor = .clear
+        return pdfView
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.document = document
+    }
+}
+
+// MARK: - SpeechManager
 class SpeechManager: ObservableObject {
     let synthesizer = AVSpeechSynthesizer()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -24,7 +44,6 @@ class SpeechManager: ObservableObject {
     @Published var isKidMode: Bool = true
     
     init() {
-        // Start in kid mode by default
         isKidMode = true
     }
     
@@ -33,23 +52,22 @@ class SpeechManager: ObservableObject {
             DispatchQueue.main.async {
                 switch authStatus {
                 case .authorized:
-                    // Welcome message and start listening
                     self.speakText("Welcome to Sonique! How can I help you?")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                         self.startListening()
                     }
                 case .denied:
                     self.showAlert = true
-                    self.alertMessage = "Speech recognition permission denied. To enable it:\n1. Open Settings\n2. Scroll down to Sonique\n3. Tap on Sonique\n4. Enable Speech Recognition and Microphone permissions"
+                    self.alertMessage = "Speech recognition permission denied. Please enable permissions in Settings."
                 case .restricted:
                     self.showAlert = true
-                    self.alertMessage = "Speech recognition is restricted on this device. Please check your device settings or parental controls."
+                    self.alertMessage = "Speech recognition is restricted on this device."
                 case .notDetermined:
                     self.showAlert = true
                     self.alertMessage = "Speech recognition permission not determined. Please try again."
                 @unknown default:
                     self.showAlert = true
-                    self.alertMessage = "Unknown speech recognition authorization status. Please try again."
+                    self.alertMessage = "Unknown speech recognition status."
                 }
             }
         }
@@ -103,15 +121,12 @@ class SpeechManager: ObservableObject {
         
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self = self else { return }
-            
             if let result = result {
                 DispatchQueue.main.async {
                     self.recognizedText = result.bestTranscription.formattedString
-                    // Reset silence timer when speech is detected
                     self.startSilenceTimer()
                 }
             }
-            
             if error != nil || result?.isFinal == true {
                 self.stopListening()
             }
@@ -121,7 +136,6 @@ class SpeechManager: ObservableObject {
     func stopListening() {
         silenceTimer?.invalidate()
         silenceTimer = nil
-        
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionTask?.cancel()
@@ -157,10 +171,10 @@ class SpeechManager: ObservableObject {
     
     func toggleMode() {
         isKidMode.toggle()
-        //speakText(message)
     }
 }
 
+// MARK: - CustomFileManager
 class CustomFileManager: ObservableObject {
     @Published var selectedFile: URL?
     @Published var fileContent: String = ""
@@ -168,11 +182,44 @@ class CustomFileManager: ObservableObject {
     @Published var showAlert: Bool = false
     @Published var alertMessage: String = ""
     @Published var uploadedFiles: [(url: URL, date: Date)] = []
+    @Published var pdfDocument: PDFDocument?
     
     func loadFile(from url: URL) {
+        // Use security-scoped resource access
+        guard url.startAccessingSecurityScopedResource() else {
+            DispatchQueue.main.async {
+                self.showAlert = true
+                self.alertMessage = "Permission denied to access file."
+            }
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        
         do {
-            let data = try Data(contentsOf: url)
-            if let content = String(data: data, encoding: .utf8) {
+            // Optionally, copy the file to a temporary directory for guaranteed access
+            let fileManagerInstance = FileManager.default
+            let tempURL = fileManagerInstance.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+            if fileManagerInstance.fileExists(atPath: tempURL.path) {
+                try fileManagerInstance.removeItem(at: tempURL)
+            }
+            try fileManagerInstance.copyItem(at: url, to: tempURL)
+            
+            let data = try Data(contentsOf: tempURL)
+            if url.pathExtension.lowercased() == "pdf" {
+                if let document = PDFDocument(data: data) {
+                    DispatchQueue.main.async {
+                        self.pdfDocument = document
+                        self.fileContent = "PDF file loaded: \(url.lastPathComponent)"
+                        self.selectedFile = url
+                        self.isFileSelected = true
+                        if !self.uploadedFiles.contains(where: { $0.url == url }) {
+                            self.uploadedFiles.append((url: url, date: Date()))
+                        }
+                    }
+                } else {
+                    throw NSError(domain: "Invalid PDF file", code: 0, userInfo: nil)
+                }
+            } else if let content = String(data: data, encoding: .utf8) {
                 DispatchQueue.main.async {
                     self.fileContent = content
                     self.selectedFile = url
@@ -181,10 +228,14 @@ class CustomFileManager: ObservableObject {
                         self.uploadedFiles.append((url: url, date: Date()))
                     }
                 }
+            } else {
+                throw NSError(domain: "Invalid file format", code: 0, userInfo: nil)
             }
         } catch {
-            showAlert = true
-            alertMessage = "Error loading file: \(error.localizedDescription)"
+            DispatchQueue.main.async {
+                self.showAlert = true
+                self.alertMessage = "Error loading file: \(error.localizedDescription)"
+            }
         }
     }
     
@@ -194,6 +245,7 @@ class CustomFileManager: ObservableObject {
             selectedFile = nil
             fileContent = ""
             isFileSelected = false
+            pdfDocument = nil
         }
     }
     
@@ -205,6 +257,7 @@ class CustomFileManager: ObservableObject {
     }
 }
 
+// MARK: - ContentView
 struct ContentView: View {
     @StateObject private var speechManager = SpeechManager()
     @StateObject private var fileManager = CustomFileManager()
@@ -243,7 +296,7 @@ struct ContentView: View {
                 .scaleEffect(isAnimating ? 0.8 : 1.0)
             
             VStack(spacing: 25) {
-                // Enhanced Title with animation at the top
+                // Enhanced Title
                 HStack(spacing: 15) {
                     Image(systemName: "ear.fill")
                         .font(.system(size: 40, weight: .bold))
@@ -278,15 +331,13 @@ struct ContentView: View {
                 .padding(.top, 40)
                 .accessibilityAddTraits(.isHeader)
                 
-                // Accessibility-focused subtitle
                 Text("Your Voice Tutor")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.gray)
                     .padding(.top, -10)
                 
-                // Separate Mode Buttons with enhanced design
+                // Mode Buttons
                 HStack(spacing: 20) {
-                    // Kid Mode Button
                     Button(action: {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                             if !speechManager.isKidMode {
@@ -297,7 +348,6 @@ struct ContentView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "person.fill")
                                 .font(.system(size: 20, weight: .semibold))
-                            
                             Text("Kid Mode")
                                 .font(.system(size: 18, weight: .bold))
                         }
@@ -323,7 +373,6 @@ struct ContentView: View {
                     .accessibilityLabel("Kid mode button")
                     .accessibilityHint("Double tap to switch to kid mode")
                     
-                    // Parent Mode Button
                     Button(action: {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                             if speechManager.isKidMode {
@@ -334,7 +383,6 @@ struct ContentView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "person.2.fill")
                                 .font(.system(size: 20, weight: .semibold))
-                            
                             Text("Parent Mode")
                                 .font(.system(size: 18, weight: .bold))
                         }
@@ -362,7 +410,7 @@ struct ContentView: View {
                 }
                 .padding(.top, 20)
                 
-                // File Selection Button with enhanced design
+                // File Upload Button (visible only in Parent Mode)
                 if !speechManager.isKidMode {
                     Button(action: {
                         showingDocumentPicker = true
@@ -392,7 +440,7 @@ struct ContentView: View {
                     .accessibilityHint("Double tap to choose a new file to upload")
                 }
                 
-                // Enhanced Display Area
+                // Display Area for Uploaded Content
                 if !speechManager.isKidMode && fileManager.isFileSelected {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Uploaded Content")
@@ -400,7 +448,10 @@ struct ContentView: View {
                             .foregroundColor(.gray)
                         
                         ScrollView {
-                            if !fileManager.fileContent.isEmpty {
+                            if let pdfDoc = fileManager.pdfDocument {
+                                PDFViewer(document: pdfDoc)
+                                    .frame(maxHeight: 400)
+                            } else if !fileManager.fileContent.isEmpty {
                                 Text(fileManager.fileContent)
                                     .font(.system(size: 16))
                                     .foregroundColor(.black)
@@ -413,26 +464,23 @@ struct ContentView: View {
                                     )
                             }
                         }
-                        .frame(maxHeight: 200)
+                        .frame(maxHeight: 400)
                     }
                     .padding(.horizontal)
                 }
                 
-                // Enhanced Uploaded Files Bar
+                // Uploaded Files List
                 if !speechManager.isKidMode {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("All Uploaded Files")
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundColor(.gray)
-                            
                             Spacer()
-                            
                             HStack(spacing: 12) {
                                 Text("\(fileManager.uploadedFiles.count) files")
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(.gray)
-                                
                                 Button(action: {
                                     showingAllFiles = true
                                 }) {
@@ -479,7 +527,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Enhanced Speech Recognition Display
+                // Speech Recognition Display (Kid Mode)
                 if speechManager.isKidMode {
                     Text(speechManager.recognizedText)
                         .font(.system(size: 24))
@@ -493,14 +541,13 @@ struct ContentView: View {
                         .padding(.horizontal)
                 }
                 
-                // Enhanced Microphone Button
+                // Microphone Button (Kid Mode)
                 if speechManager.isKidMode {
                     ZStack {
                         Circle()
                             .fill(Color.white)
                             .shadow(color: Color.black.opacity(0.1), radius: 10)
                             .frame(width: 130, height: 130)
-                        
                         Button(action: {
                             if speechManager.isRecognizing {
                                 speechManager.stopListening()
@@ -512,13 +559,11 @@ struct ContentView: View {
                                 Circle()
                                     .fill(speechManager.isRecognizing ? Color.red.opacity(0.1) : Color.blue.opacity(0.1))
                                     .frame(width: 120, height: 120)
-                                
                                 Image(systemName: speechManager.isRecognizing ? "mic.fill" : "mic.circle.fill")
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 65, height: 65)
                                     .foregroundColor(speechManager.isRecognizing ? .red : .blue)
-                                
                                 if speechManager.isRecognizing {
                                     Circle()
                                         .stroke(Color.red, lineWidth: 3)
@@ -549,13 +594,16 @@ struct ContentView: View {
         }
         .fileImporter(
             isPresented: $showingDocumentPicker,
-            allowedContentTypes: [.text, .plainText],
+            allowedContentTypes: [.pdf, .text, .plainText],
             allowsMultipleSelection: false
         ) { result in
             switch result {
             case .success(let files):
                 if let file = files.first {
                     fileManager.loadFile(from: file)
+                    // Upload the file to the backend.
+                    // Replace the URL below with your actual backend URL.
+                    uploadPDF(to: URL(string: "http://10.23.113.86:5000/upload-book")!, fileURL: file)
                 }
             case .failure(let error):
                 fileManager.showAlert = true
@@ -571,9 +619,60 @@ struct ContentView: View {
             AllFilesView(fileManager: fileManager)
         }
     }
+    
+    // MARK: - Upload PDF Function
+    func uploadPDF(to url: URL, fileURL: URL) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        var body = Data()
+        do {
+            let fileData = try Data(contentsOf: fileURL)
+            let filename = fileURL.lastPathComponent
+            let mimetype = "application/pdf"
+            
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(mimetype)\r\n\r\n".data(using: .utf8)!)
+            body.append(fileData)
+            body.append("\r\n".data(using: .utf8)!)
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+        } catch {
+            fileManager.showAlert = true
+            fileManager.alertMessage = "Failed to read file: \(error.localizedDescription)"
+            return
+        }
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    fileManager.showAlert = true
+                    fileManager.alertMessage = "Upload failed: \(error.localizedDescription)"
+                    return
+                }
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    fileManager.showAlert = true
+                    fileManager.alertMessage = "Server error during upload."
+                    return
+                }
+                // For debugging: print server response
+                if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                    print("Server response: \(responseString)")
+                    fileManager.alertMessage = "Upload successful! Response: \(responseString)"
+                } else {
+                    fileManager.alertMessage = "Upload successful!"
+                }
+                fileManager.showAlert = true
+            }
+        }.resume()
+    }
 }
 
-// Custom Button Style for Press Animation
+// MARK: - Custom Button Style for Press Animation
 struct PressableButtonStyle: ButtonStyle {
     @Binding var isPressed: Bool
     
@@ -581,13 +680,13 @@ struct PressableButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { oldValue, newValue in
+            .onChange(of: configuration.isPressed) { _, newValue in
                 isPressed = newValue
             }
     }
 }
 
-// Enhanced File Card View
+// MARK: - File Card View
 struct FileCard: View {
     let fileName: String
     let date: Date
@@ -609,19 +708,16 @@ struct FileCard: View {
                     Image(systemName: "doc.text")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(isSelected ? .white : .gray)
-                    
                     Text(fileName)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(isSelected ? .white : .gray)
                         .lineLimit(1)
-                    
                     Button(action: onDelete) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundColor(isSelected ? .white : .gray)
                     }
                 }
-                
                 Text(dateFormatter.string(from: date))
                     .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .gray.opacity(0.8))
@@ -638,7 +734,7 @@ struct FileCard: View {
     }
 }
 
-// Enhanced All Files View
+// MARK: - All Files View
 struct AllFilesView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var fileManager: CustomFileManager
@@ -653,12 +749,9 @@ struct AllFilesView: View {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.blue)
-                            
                             Text(file.url.lastPathComponent)
                                 .font(.system(size: 17, weight: .medium))
-                            
                             Spacer()
-                            
                             Button(action: {
                                 fileManager.removeFile(file.url)
                             }) {
@@ -667,14 +760,11 @@ struct AllFilesView: View {
                                     .foregroundColor(.red)
                             }
                         }
-                        
                         HStack {
                             Text(fileManager.formatDate(file.date))
                                 .font(.system(size: 14))
                                 .foregroundColor(.gray)
-                            
                             Spacer()
-                            
                             Button(action: {
                                 selectedFile = file.url
                                 fileManager.loadFile(from: file.url)
@@ -707,4 +797,3 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
-

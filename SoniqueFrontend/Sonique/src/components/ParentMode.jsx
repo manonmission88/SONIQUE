@@ -34,11 +34,11 @@ function ParentMode({ switchToKid }) {
   return (
     <div style={{ textAlign: "center", marginTop: "50px" }}>
       <h1>Parent Mode</h1>
-      <p>This is the view for parents. Upload a file below.</p>
+      <p>Upload Course Material(s)</p>
       <input type="file" accept=".pdf" onChange={handleFileUpload} />
       <br />
       <br />
-      <button onClick={switchToKid}>Switch to Kid Mode</button>
+      <button onClick={switchToKid}>Switch to Learning Mode</button>
     </div>
   );
 }

@@ -1,10 +1,3 @@
-# # @app.route("/quiz", methods=["GET"])
-# # def get_quiz():
-# #     chapter = request.args.get("chapter")
-# #     doc = db.chapters.find_one({"chapter_id": chapter})
-# #     return jsonify(doc["quiz"])
-
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -69,7 +62,7 @@ def upload_book():
 
     db.insert(book)
 
-    return 201, jsonify({'message': 'Book uploaded successfully', 'id': next_id})
+    return jsonify({'message': 'Book uploaded successfully', 'id': next_id})
 
 @app.route('/all-books', methods=['GET'])
 def get_all_books():
@@ -104,39 +97,40 @@ def parse_gemini_response(text):
 
     return {
         "action": parts[0],
-        "book_id": int(parts[1]),
-        "name_match": parts[2]
+        "book_id": int(parts[1]) if parts[1].isnumeric() else None,
+        "name_match": parts[2] if parts[2].isalpha() else None
     }
 
 
 @app.route('/interpret', methods=['POST'])
 def interpret_user_input():
-    data = request.get_json()
-    transcript = data.get("transcript", "")
+    try:
+        data = request.get_json()
+        transcript = data.get("transcript", "")
 
-    # Send book names only for efficiency
-    book_names = get_book_names()
+        # Instead of calling get_book_names(), get the books directly
+        books = db.all()
+        booksStr = json.dumps(books)
 
-    prompt = f"""
+        prompt = f"""
                 You are an assistant for a voice-powered learning app. From the following user command, identify their intent. Respond only with a list in this format:
-
+                
                 [action, book_id, name_match]
-
+                
                 Where:
-                - action is summarize, quiz, or narrate
+                - action is summarize, quiz, narrate, or none if it's unclear
                 - book_id is an integer from the list below
                 - name_match is the name or number of the chapter
-
+                
                 Respond ONLY with the list. No extra text.
-
+                
                 User command:
                 "{transcript}"
-
+                
                 Available books:
-                {book_names}
-            """
+                {booksStr}
+                """
 
-    try:
         response = model.generate_content(prompt)
         parsed = parse_gemini_response(response.text)
 
@@ -147,6 +141,8 @@ def interpret_user_input():
         book_id = parsed["book_id"]
         chapter_name = parsed["name_match"]
 
+        print(action)
+
         if action == "summarize":
             return jsonify(generate_summary(book_id)), 200
         elif action == "quiz":
@@ -154,10 +150,12 @@ def interpret_user_input():
         elif action == "narrate":
             return jsonify(narrate_chapter(book_id)), 200
         else:
-            return jsonify({"error": "Unknown action"}), 400
+            return jsonify({"error": "No action detected"}), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        app.logger.error("Error in /interpret: %s", str(e))
+        return jsonify({"error": str(e)}), 500
+
 
 def generate_summary(book_id):
     # print(f"[Summary] Book ID: {book_id}, Chapter: {name_match}")
@@ -174,7 +172,7 @@ def generate_summary(book_id):
         return {"error": "Book content is empty"}
 
     prompt = f"""
-    Summarize the following educational content in a way that is clear and accessible for a blind middle school student:
+    Summarize the following educational content in a way that is clear and accessible for a middle school student. Only provide the summary and nothing else. It shouldn't be more than 3 sentences.
 
     {full_text}
     """
@@ -210,7 +208,12 @@ def take_quiz(book_id, name_match):
     # Return quiz from DB or ask questions
     return {"status": "quiz started"}
 
+@app.route('/delete-all', methods=['GET'])
+def delete_all_books():
+    db.truncate()
+    return jsonify({"message": "All data deleted from the database."}), 200
+
 
 # Expose the URL and Port
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5004, debug=True)
