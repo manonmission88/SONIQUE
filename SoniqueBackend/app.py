@@ -148,14 +148,14 @@ def interpret_user_input():
 
         action = parsed["action"]
         book_id = parsed["book_id"]
-        chapter = parsed["name_match"]
+        chapter_name = parsed["name_match"]
 
         if action == "summarize":
-            return jsonify(generate_summary(book_id, chapter)), 200
+            return jsonify(generate_summary(book_id)), 200
         elif action == "quiz":
-            return jsonify(generate_quiz(book_id, chapter)), 200
+            return jsonify(generate_quiz(book_id)), 200
         elif action == "narrate":
-            return jsonify(narrate_chapter(book_id, chapter)), 200
+            return jsonify(narrate_chapter(book_id)), 200
         else:
             return jsonify({"error": "Unknown action"}), 400
 
@@ -199,13 +199,12 @@ def narrate_chapter(book_id):
         return {"error": "Book not found"}
 
     return {
-        "text": book["content"],
+        "text": book["content"], 
         "status": "ready"
     }
 
 
-def generate_quiz(book_id, name_match):
-    print(f"[Quiz Generation] Book ID: {book_id}, Chapter: {name_match}")
+def generate_quiz(book_id):
     # Use content to generate a quiz via Gemini and take the quiz
     return {"status": "quiz generated"}
 
@@ -213,7 +212,6 @@ def take_quiz(book_id, name_match):
     print(f"[Take Quiz] Book ID: {book_id}, Chapter: {name_match}")
     # Return quiz from DB or ask questions
     return {"status": "quiz started"}
-
 
 
 # Expose the URL and Port
