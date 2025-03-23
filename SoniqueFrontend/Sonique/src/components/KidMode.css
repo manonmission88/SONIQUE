@@ -12,6 +12,19 @@
   color: white;
 }
 
+<<<<<<< HEAD
+=======
+.app-title {
+  font-size: 3em;
+  font-weight: bold;
+  margin-bottom: 20px;
+  background: linear-gradient(120deg, #ffffff, #e0e0e0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+>>>>>>> 1e44cfe (all updated)
 .mic-container {
   position: relative;
   margin: 40px 0;
@@ -34,6 +47,7 @@
 
 .pulsate {
   animation: pulsate 1.5s ease-in-out infinite;
+<<<<<<< HEAD
 }
 
 .wave {
@@ -58,6 +72,8 @@
 
 .recording .wave:nth-child(3) {
   animation-delay: 1s;
+=======
+>>>>>>> 1e44cfe (all updated)
 }
 
 @keyframes pulsate {
@@ -78,6 +94,33 @@
   }
 }
 
+<<<<<<< HEAD
+=======
+.wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150px;
+  height: 150px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.recording .wave {
+  animation: wave 2s linear infinite;
+}
+
+.recording .wave:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.recording .wave:nth-child(3) {
+  animation-delay: 1s;
+}
+
+>>>>>>> 1e44cfe (all updated)
 @keyframes wave {
   0% {
     transform: translate(-50%, -50%) scale(0.5);
@@ -120,6 +163,7 @@
     opacity: 1;
     transform: translateY(0);
   }
+<<<<<<< HEAD
 }
 
 .app-title {
@@ -131,3 +175,6 @@
   -webkit-text-fill-color: transparent;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
+=======
+}
+>>>>>>> 1e44cfe (all updated)

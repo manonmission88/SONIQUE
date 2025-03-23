@@ -92,6 +92,16 @@ def get_book_content(book_id):
 
     return jsonify({'content': book['content']}), 200
 
+@app.route('/delete-all', methods=['GET'])
+def delete_all_books():
+    db.truncate()
+    return jsonify({"message": "All data deleted from the database."}), 200
+
+@app.route('/delete-book/<int:book_id>', methods=['GET'])
+def delete_book(book_id):
+    db.remove(Book.id == book_id)
+    return jsonify({"message": f"Book with ID {book_id} deleted."}), 200
+
 def parse_gemini_response(text):
     match = re.search(r'\[(.*?)\]', text)
     if not match:
@@ -210,17 +220,64 @@ def narrate_chapter(book_id):
 
 def generate_quiz(book_id):
     # Use content to generate a quiz via Gemini and take the quiz
-    return {"status": "quiz generated"}
+    # return {"status": "quiz generated"}
+    book = db.get(Book.id == book_id)
+    if not book:
+        return {"error": "Book not found"}
+
+    full_text = book["content"].strip()
+
+    if not full_text:
+        return {"error": "Book content is empty"}
+
+    prompt = f"""
+    Generate three quiz questions based on the following educational content. The questions should be suitable for a middle school student. There should be 4 options for each question and the correct answer should be included. It should be plain text without special characters and no markdown formatting.
+    
+    Example:
+    Question: What is the capital of France?
+    A. London
+    B. Paris
+    C. Berlin
+    D. Madrid
+    Correct Answer: B
+
+    {full_text}
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        new_quiz = response.text.strip()
+
+        # Retrieve the book from the database
+        book = db.get(Book.id == book_id)
+        if not book:
+            return {"error": "Book not found"}
+
+        # Get the existing quizzes list (or use an empty list if none exists)
+        existing_quizzes = book.get("quizzes", [])
+
+        # Append the new quiz to the list
+        updated_quizzes = existing_quizzes + [new_quiz]
+
+        # Update the book record with the new list of quizzes
+        db.update({"quizzes": updated_quizzes}, Book.id == book_id)
+
+        return {"quiz": new_quiz, "source": "generated"}
+    except Exception as e:
+        return {"error": f"Gemini failed: {str(e)}"}
+
+@app.route('/get-quiz/<int:book_id>', methods=['GET'])
+def get_quiz(book_id):
+    book = db.get(Book.id == book_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
+
+    return jsonify({"quizzes": book["quizzes"]})
 
 def take_quiz(book_id, name_match):
     print(f"[Take Quiz] Book ID: {book_id}, Chapter: {name_match}")
     # Return quiz from DB or ask questions
     return {"status": "quiz started"}
-
-@app.route('/delete-all', methods=['GET'])
-def delete_all_books():
-    db.truncate()
-    return jsonify({"message": "All data deleted from the database."}), 200
 
 
 # Expose the URL and Port
