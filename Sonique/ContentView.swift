@@ -40,15 +40,16 @@ class SpeechManager: ObservableObject {
                     }
                 case .denied:
                     self.showAlert = true
-                    self.alertMessage = "Speech recognition permission denied. Please enable it in Settings."
+                    self.alertMessage = "Speech recognition permission denied. To enable it:\n1. Open Settings\n2. Scroll down to Sonique\n3. Tap on Sonique\n4. Enable Speech Recognition and Microphone permissions"
                 case .restricted:
                     self.showAlert = true
-                    self.alertMessage = "Speech recognition is restricted on this device."
+                    self.alertMessage = "Speech recognition is restricted on this device. Please check your device settings or parental controls."
                 case .notDetermined:
-                    print("Speech recognition not determined.")
+                    self.showAlert = true
+                    self.alertMessage = "Speech recognition permission not determined. Please try again."
                 @unknown default:
                     self.showAlert = true
-                    self.alertMessage = "Unknown speech recognition authorization status."
+                    self.alertMessage = "Unknown speech recognition authorization status. Please try again."
                 }
             }
         }
@@ -156,8 +157,7 @@ class SpeechManager: ObservableObject {
     
     func toggleMode() {
         isKidMode.toggle()
-        let message = "Switched to \(isKidMode ? "Kid" : "Parent") Mode"
-//        speakText(message)
+        //speakText(message)
     }
 }
 
@@ -212,224 +212,336 @@ struct ContentView: View {
     @State private var isPressed = false
     @State private var selectedFileIndex: Int?
     @State private var showingAllFiles = false
+    @State private var isAnimating = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Simplified Mode Toggle Button
-            Button(action: {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                    speechManager.toggleMode()
-                }
-            }) {
-                HStack(spacing: 12) {
-                    Image(systemName: speechManager.isKidMode ? "person.fill" : "person.2.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                    
-                    Text(speechManager.isKidMode ? "Kid Mode" : "Parent Mode")
-                        .font(.system(size: 17, weight: .bold))
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 25)
-                        .fill(speechManager.isKidMode ? Color.blue : Color.green)
-                        .shadow(color: speechManager.isKidMode ? Color.blue.opacity(0.3) : Color.green.opacity(0.3), radius: 10)
-                )
-                .foregroundColor(.white)
-            }
-            .buttonStyle(PressableButtonStyle(isPressed: $isPressed))
-            .accessibilityLabel("Mode toggle button")
-            .accessibilityHint("Double tap to switch between kid and parent mode")
-            .padding(.top, 20)
-            
-            Text("Sonique")
-                .font(.system(size: 45, weight: .bold))
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            speechManager.isKidMode ? Color.blue : Color.green,
-                            speechManager.isKidMode ? Color.blue.opacity(0.7) : Color.green.opacity(0.7)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .padding(.top, 10)
-                .accessibilityAddTraits(.isHeader)
-            
-            // File Selection Button (Only in Parent Mode)
-            if !speechManager.isKidMode {
-                Button(action: {
-                    showingDocumentPicker = true
-                }) {
-                    HStack {
-                        Image(systemName: "doc.badge.plus")
-                        Text("Upload New Content")
-                    }
-                    .font(.system(size: 18))
-                    .padding()
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    .shadow(color: Color.orange.opacity(0.3), radius: 10)
-                }
-                .accessibilityLabel("Upload new content button")
-                .accessibilityHint("Double tap to choose a new file to upload")
-            }
-            
-            // Display Area (Uploaded Content)
-            if !speechManager.isKidMode && fileManager.isFileSelected {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Uploaded Content:")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.gray)
-                    
-                    ScrollView {
-                        if !fileManager.fileContent.isEmpty {
-                            Text(fileManager.fileContent)
-                                .font(.system(size: 16))
-                                .foregroundColor(.black)
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(10)
-                        }
-                    }
-                    .frame(maxHeight: 200)
-                }
-                .padding(.horizontal)
-            }
-            
-            // Uploaded Files Bar (Only in Parent Mode)
-            if !speechManager.isKidMode {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("All Uploaded Files")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.gray)
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 12) {
-                            Text("\(fileManager.uploadedFiles.count) files")
-                                .font(.system(size: 14))
-                                .foregroundColor(.gray)
-                            
-                            Button(action: {
-                                showingAllFiles = true
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "list.bullet")
-                                    Text("View All")
-                                }
-                                .font(.system(size: 14, weight: .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(8)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    if !fileManager.uploadedFiles.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(fileManager.uploadedFiles, id: \.url) { file in
-                                    FileCard(
-                                        fileName: file.url.lastPathComponent,
-                                        date: file.date,
-                                        isSelected: fileManager.selectedFile == file.url,
-                                        onTap: {
-                                            fileManager.loadFile(from: file.url)
-                                            selectedFileIndex = fileManager.uploadedFiles.firstIndex(where: { $0.url == file.url })
-                                        },
-                                        onDelete: {
-                                            fileManager.removeFile(file.url)
-                                        }
-                                    )
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                }
-            }
-            
-            Spacer()
-            Spacer()
-            
-            // Speech Recognition Display (Only in Kid Mode)
-            if speechManager.isKidMode {
-                Text(speechManager.recognizedText)
-                    .font(.system(size: 24))
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(15)
-                    .padding(.horizontal)
-            }
-            
-            // Microphone Button with Overlay (Only in Kid Mode)
-            if speechManager.isKidMode {
-                ZStack {
-                    Circle()
-                        .fill(Color.white)
-                        .shadow(color: .gray, radius: 5)
-                        .frame(width: 120, height: 120)
-                    
-                    Button(action: {
-                        if speechManager.isRecognizing {
-                            speechManager.stopListening()
-                        } else {
-                            speechManager.startListening()
-                        }
-                    }) {
-                        ZStack {
-                            Circle()
-                                .fill(speechManager.isRecognizing ? Color.red.opacity(0.1) : Color.blue.opacity(0.1))
-                                .frame(width: 110, height: 110)
-                            
-                            Image(systemName: speechManager.isRecognizing ? "mic.fill" : "mic.circle.fill")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 60, height: 60)
-                                .foregroundColor(speechManager.isRecognizing ? .red : .blue)
-                            
-                            if speechManager.isRecognizing {
-                                Circle()
-                                    .stroke(Color.red, lineWidth: 3)
-                                    .frame(width: 110, height: 110)
-                                    .scaleEffect(1.2)
-                                    .opacity(0.5)
-                                    .animation(Animation.easeOut(duration: 1).repeatForever(autoreverses: true), value: speechManager.isRecognizing)
-                            }
-                        }
-                    }
-                    .accessibilityLabel(speechManager.isRecognizing ? "Stop listening" : "Start listening")
-                    .accessibilityHint(speechManager.isRecognizing ? "Double tap to stop recording" : "Double tap to start recording")
-                }
-                .padding(.bottom, 50)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
+        ZStack {
+            // Background gradient
             LinearGradient(
                 gradient: Gradient(colors: [
-                    speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1),
+                    speechManager.isKidMode ? Color.blue.opacity(0.15) : Color.green.opacity(0.15),
                     speechManager.isKidMode ? Color.blue.opacity(0.05) : Color.green.opacity(0.05)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-        )
+            .ignoresSafeArea()
+            
+            // Animated background circles
+            Circle()
+                .fill(speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
+                .frame(width: 300, height: 300)
+                .blur(radius: 50)
+                .offset(x: -150, y: -200)
+                .scaleEffect(isAnimating ? 1.2 : 1.0)
+            
+            Circle()
+                .fill(speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
+                .frame(width: 300, height: 300)
+                .blur(radius: 50)
+                .offset(x: 150, y: 200)
+                .scaleEffect(isAnimating ? 0.8 : 1.0)
+            
+            VStack(spacing: 25) {
+                // Enhanced Title with animation at the top
+                HStack(spacing: 15) {
+                    Image(systemName: "ear.fill")
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.purple,
+                                    Color.purple.opacity(0.7)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .rotationEffect(.degrees(-15))
+                    
+                    Text("Sonique")
+                        .font(.system(size: 70, weight: .heavy))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.purple,
+                                    Color.purple.opacity(0.7)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: Color.purple.opacity(0.3), radius: 10)
+                        .scaleEffect(isAnimating ? 1.05 : 1.0)
+                        .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: isAnimating)
+                }
+                .padding(.top, 40)
+                .accessibilityAddTraits(.isHeader)
+                
+                // Accessibility-focused subtitle
+                Text("Your Voice Tutor")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.gray)
+                    .padding(.top, -10)
+                
+                // Separate Mode Buttons with enhanced design
+                HStack(spacing: 20) {
+                    // Kid Mode Button
+                    Button(action: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            if !speechManager.isKidMode {
+                                speechManager.toggleMode()
+                            }
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 20, weight: .semibold))
+                            
+                            Text("Kid Mode")
+                                .font(.system(size: 18, weight: .bold))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            speechManager.isKidMode ? Color.purple : Color.purple.opacity(0.3),
+                                            speechManager.isKidMode ? Color.purple.opacity(0.8) : Color.purple.opacity(0.2)
+                                        ]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: speechManager.isKidMode ? Color.purple.opacity(0.3) : Color.clear, radius: 15)
+                        )
+                        .foregroundColor(speechManager.isKidMode ? .white : .gray)
+                    }
+                    .buttonStyle(PressableButtonStyle(isPressed: $isPressed))
+                    .accessibilityLabel("Kid mode button")
+                    .accessibilityHint("Double tap to switch to kid mode")
+                    
+                    // Parent Mode Button
+                    Button(action: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            if speechManager.isKidMode {
+                                speechManager.toggleMode()
+                            }
+                        }
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 20, weight: .semibold))
+                            
+                            Text("Parent Mode")
+                                .font(.system(size: 18, weight: .bold))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            !speechManager.isKidMode ? Color.purple : Color.purple.opacity(0.3),
+                                            !speechManager.isKidMode ? Color.purple.opacity(0.8) : Color.purple.opacity(0.2)
+                                        ]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: !speechManager.isKidMode ? Color.purple.opacity(0.3) : Color.clear, radius: 15)
+                        )
+                        .foregroundColor(!speechManager.isKidMode ? .white : .gray)
+                    }
+                    .buttonStyle(PressableButtonStyle(isPressed: $isPressed))
+                    .accessibilityLabel("Parent mode button")
+                    .accessibilityHint("Double tap to switch to parent mode")
+                }
+                .padding(.top, 20)
+                
+                // File Selection Button with enhanced design
+                if !speechManager.isKidMode {
+                    Button(action: {
+                        showingDocumentPicker = true
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "doc.badge.plus")
+                                .font(.system(size: 20, weight: .semibold))
+                            Text("Upload New Content")
+                                .font(.system(size: 18, weight: .semibold))
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: Color.orange.opacity(0.3), radius: 15)
+                        )
+                        .foregroundColor(.white)
+                    }
+                    .accessibilityLabel("Upload new content button")
+                    .accessibilityHint("Double tap to choose a new file to upload")
+                }
+                
+                // Enhanced Display Area
+                if !speechManager.isKidMode && fileManager.isFileSelected {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Uploaded Content")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.gray)
+                        
+                        ScrollView {
+                            if !fileManager.fileContent.isEmpty {
+                                Text(fileManager.fileContent)
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.black)
+                                    .padding()
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 15)
+                                            .fill(Color.white)
+                                            .shadow(color: Color.black.opacity(0.05), radius: 10)
+                                    )
+                            }
+                        }
+                        .frame(maxHeight: 200)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Enhanced Uploaded Files Bar
+                if !speechManager.isKidMode {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("All Uploaded Files")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.gray)
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 12) {
+                                Text("\(fileManager.uploadedFiles.count) files")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.gray)
+                                
+                                Button(action: {
+                                    showingAllFiles = true
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "list.bullet")
+                                        Text("View All")
+                                    }
+                                    .font(.system(size: 14, weight: .medium))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .fill(Color.blue.opacity(0.1))
+                                    )
+                                    .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        if !fileManager.uploadedFiles.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(fileManager.uploadedFiles, id: \.url) { file in
+                                        FileCard(
+                                            fileName: file.url.lastPathComponent,
+                                            date: file.date,
+                                            isSelected: fileManager.selectedFile == file.url,
+                                            onTap: {
+                                                fileManager.loadFile(from: file.url)
+                                                selectedFileIndex = fileManager.uploadedFiles.firstIndex(where: { $0.url == file.url })
+                                            },
+                                            onDelete: {
+                                                fileManager.removeFile(file.url)
+                                            }
+                                        )
+                                    }
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Enhanced Speech Recognition Display
+                if speechManager.isKidMode {
+                    Text(speechManager.recognizedText)
+                        .font(.system(size: 24))
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Color.white)
+                                .shadow(color: Color.black.opacity(0.05), radius: 10)
+                        )
+                        .padding(.horizontal)
+                }
+                
+                // Enhanced Microphone Button
+                if speechManager.isKidMode {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white)
+                            .shadow(color: Color.black.opacity(0.1), radius: 10)
+                            .frame(width: 130, height: 130)
+                        
+                        Button(action: {
+                            if speechManager.isRecognizing {
+                                speechManager.stopListening()
+                            } else {
+                                speechManager.startListening()
+                            }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(speechManager.isRecognizing ? Color.red.opacity(0.1) : Color.blue.opacity(0.1))
+                                    .frame(width: 120, height: 120)
+                                
+                                Image(systemName: speechManager.isRecognizing ? "mic.fill" : "mic.circle.fill")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 65, height: 65)
+                                    .foregroundColor(speechManager.isRecognizing ? .red : .blue)
+                                
+                                if speechManager.isRecognizing {
+                                    Circle()
+                                        .stroke(Color.red, lineWidth: 3)
+                                        .frame(width: 120, height: 120)
+                                        .scaleEffect(1.2)
+                                        .opacity(0.5)
+                                        .animation(Animation.easeOut(duration: 1).repeatForever(autoreverses: true), value: speechManager.isRecognizing)
+                                }
+                            }
+                        }
+                        .accessibilityLabel(speechManager.isRecognizing ? "Stop listening" : "Start listening")
+                        .accessibilityHint(speechManager.isRecognizing ? "Double tap to stop recording" : "Double tap to start recording")
+                    }
+                    .padding(.bottom, 50)
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                isAnimating = true
+            }
+            speechManager.requestPermission()
+        }
         .alert("Error", isPresented: $speechManager.showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -455,9 +567,6 @@ struct ContentView: View {
         } message: {
             Text(fileManager.alertMessage)
         }
-        .onAppear {
-            speechManager.requestPermission()
-        }
         .sheet(isPresented: $showingAllFiles) {
             AllFilesView(fileManager: fileManager)
         }
@@ -472,13 +581,13 @@ struct PressableButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { newValue in
+            .onChange(of: configuration.isPressed) { oldValue, newValue in
                 isPressed = newValue
             }
     }
 }
 
-// File Card View for the horizontal scroll
+// Enhanced File Card View
 struct FileCard: View {
     let fileName: String
     let date: Date
@@ -495,38 +604,41 @@ struct FileCard: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
                     Image(systemName: "doc.text")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(isSelected ? .white : .gray)
                     
                     Text(fileName)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(isSelected ? .white : .gray)
                         .lineLimit(1)
                     
                     Button(action: onDelete) {
                         Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
                             .foregroundColor(isSelected ? .white : .gray)
                     }
                 }
                 
                 Text(dateFormatter.string(from: date))
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .gray.opacity(0.8))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(isSelected ? Color.blue : Color.gray.opacity(0.2))
+                RoundedRectangle(cornerRadius: 25)
+                    .fill(isSelected ? Color.blue : Color.gray.opacity(0.15))
+                    .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.black.opacity(0.05), radius: 5)
             )
         }
         .buttonStyle(PlainButtonStyle())
     }
 }
 
-// New view for displaying all files
+// Enhanced All Files View
 struct AllFilesView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var fileManager: CustomFileManager
@@ -536,13 +648,14 @@ struct AllFilesView: View {
         NavigationView {
             List {
                 ForEach(fileManager.uploadedFiles, id: \.url) { file in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Image(systemName: "doc.text")
+                                .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.blue)
                             
                             Text(file.url.lastPathComponent)
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 17, weight: .medium))
                             
                             Spacer()
                             
@@ -550,6 +663,7 @@ struct AllFilesView: View {
                                 fileManager.removeFile(file.url)
                             }) {
                                 Image(systemName: "trash")
+                                    .font(.system(size: 16))
                                     .foregroundColor(.red)
                             }
                         }
@@ -571,7 +685,7 @@ struct AllFilesView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
                 }
             }
             .navigationTitle("All Uploaded Files")
@@ -581,6 +695,7 @@ struct AllFilesView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .font(.system(size: 16, weight: .medium))
                 }
             }
         }
