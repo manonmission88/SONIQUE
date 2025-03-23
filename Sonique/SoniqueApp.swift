@@ -5,6 +5,7 @@
 //  Created by Manish Niure on 3/22/25.
 //
 
+
 import SwiftUI
 
 @main
@@ -15,3 +16,4 @@ struct SoniqueApp: App {
         }
     }
 }
+
