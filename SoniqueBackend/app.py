@@ -10,7 +10,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from tinydb import TinyDB, Query
 import os, json
-import fitz  # PyMuPDF for PDF parsing
+import fitz as PYMuDF  # PyMuPDF for PDF parsing
 import google.generativeai as genai
 from dotenv import load_dotenv
 import re
@@ -44,12 +44,11 @@ def upload_book():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    # Extract text using PyMuPDF
+    # Extract text using PyMuDF
     try:
-        with fitz.open(filepath) as doc:
+        with PYMuDF.open(filepath) as doc:
             text = "\n".join([page.get_text() for page in doc])
             print("Extraction Completed\n")
-
     except Exception as e:
         return jsonify({'error': f'Failed to parse PDF: {str(e)}'}), 500
 
@@ -60,7 +59,7 @@ def upload_book():
     # Construct book object
     book = {
         "id": next_id,
-        "name": text.strip().split('\n')[0] if text else f"Book {next_id}", 
+        "name": text.strip().split('\n')[0] if text else f"Book {next_id}",
         "content": text,
         "summary": "",
         "quizzes": [],
@@ -69,7 +68,7 @@ def upload_book():
 
     db.insert(book)
 
-    return 201, jsonify({'message': 'Book uploaded successfully', 'id': next_id})
+    return jsonify({'message': 'Book uploaded successfully', 'id': next_id}), 201
 
 @app.route('/all-books', methods=['GET'])
 def get_all_books():
@@ -213,4 +212,4 @@ def take_quiz(book_id, name_match):
 
 # Expose the URL and Port
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
