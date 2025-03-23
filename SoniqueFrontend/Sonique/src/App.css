@@ -1,18 +1,21 @@
 /* The outer container just ensures the page takes up full height. */
 .app-container {
   min-height: 100vh;
-  background-color: #222; /* example dark background; adjust as needed */
+  background-color: #ffffff;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Centers the main content horizontally under the NavBar */
 .content-container {
   margin: 80px auto 0 auto; /* top margin to create space under the NavBar */
-  max-width: 800px;         /* limit the content width */
-  width: 90%;               /* responsive width on smaller screens */
+  max-width: 1200px;         /* limit the content width */
+  width: 95%;               /* responsive width on smaller screens */
   text-align: center;       /* center text if desired */
   padding: 20px;
   box-sizing: border-box;
+  flex: 1;
 }

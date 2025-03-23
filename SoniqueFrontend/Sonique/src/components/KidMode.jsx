@@ -3,15 +3,14 @@ import './KidMode.css';
 
 function KidMode({ switchToParent }) {
   const [recording, setRecording] = useState(false);
+  const [statusText, setStatusText] = useState('');
 
   useEffect(() => {
-    let isMounted = true;       // flag to track if KidMode is mounted
-    let sessionEnded = false;   // flag to track if the user said "stop"
+    let isMounted = true;
+    let sessionEnded = false;
 
-    // Create an AudioContext (used to unlock audio playback)
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // One-time event listener for user interaction to resume the AudioContext.
     const resumeAudio = () => {
       if (audioCtx.state === "suspended") {
         audioCtx.resume().then(() => {
@@ -23,18 +22,17 @@ function KidMode({ switchToParent }) {
     };
     document.body.addEventListener("click", resumeAudio, { once: true });
 
-    // Define the recursive interaction function.
     function interact() {
-      if (!isMounted || sessionEnded) return; // exit if unmounted or session ended
+      if (!isMounted || sessionEnded) return;
 
-      // Update UI: set recording to false initially.
       setRecording(false);
+      setStatusText('Waiting for your command...');
 
-      // Speak the greeting with instruction.
-      const greeting = new SpeechSynthesisUtterance("Please tell me what you want me to do, or say stop to end the voice session.");
+      const greeting = new SpeechSynthesisUtterance(
+        "Please tell me what you want me to do, or say stop to end the voice session."
+      );
       greeting.lang = "en-US";
 
-      // Once the greeting is done, start speech recognition.
       greeting.onend = () => {
         if (!isMounted || sessionEnded) return;
         console.log("Greeting finished. Starting speech recognition...");
@@ -49,24 +47,26 @@ function KidMode({ switchToParent }) {
         recognition.maxAlternatives = 1;
         let recognized = false;
 
-        // Set recording true while listening.
         setRecording(true);
+        setStatusText('Listening...');
 
         recognition.onresult = (event) => {
           recognized = true;
           setRecording(false);
           const transcript = event.results[0][0].transcript;
+          setStatusText('Processing your request...');
           console.log("User said:", transcript);
-          // Check if user said "stop"
+
           if (transcript.trim().toLowerCase().includes("stop")) {
             sessionEnded = true;
             setRecording(false);
+            setStatusText('Voice session ended');
             const endUtterance = new SpeechSynthesisUtterance("Voice session ended.");
             endUtterance.lang = "en-US";
             window.speechSynthesis.speak(endUtterance);
             return;
           }
-          // Send transcript to the backend endpoint.
+
           fetch("http://localhost:5004/interpret", {
             method: "POST",
             headers: {
@@ -82,48 +82,69 @@ function KidMode({ switchToParent }) {
             })
             .then((data) => {
               console.log("Response from /interpret:", data);
+              setStatusText('');
+              
               if (data.error && data.error === "No action detected") {
-                const retry = new SpeechSynthesisUtterance("I didn't catch that, please say it again.");
+                const retry = new SpeechSynthesisUtterance(
+                  "I didn't catch that, please say it again."
+                );
                 retry.lang = "en-US";
-                retry.onend = () => { if (isMounted && !sessionEnded) interact(); };
+                retry.onend = () => {
+                  if (isMounted && !sessionEnded) interact();
+                };
                 window.speechSynthesis.speak(retry);
-              } else if ((data.text && data.text.trim() !== "") || (data.summary && data.summary.trim() !== "")) {
-                const content = (data.text && data.text.trim() !== "") ? data.text : data.summary;
-                // Clean the text.
-                const cleanText = content.replace(/[^\w\s.,?!]/g, '');
+              } else if (
+                (data.text && data.text.trim() !== "") ||
+                (data.summary && data.summary.trim() !== "")
+              ) {
+                const content = data.text && data.text.trim() !== ""
+                  ? data.text
+                  : data.summary;
+                const cleanText = content.replace(/[^\w\s.,?!]/g, "");
                 const narration = new SpeechSynthesisUtterance(cleanText);
                 narration.lang = "en-US";
-                narration.onend = () => { if (isMounted && !sessionEnded) interact(); };
+                narration.onend = () => {
+                  if (isMounted && !sessionEnded) interact();
+                };
                 window.speechSynthesis.speak(narration);
               } else {
-                const retry = new SpeechSynthesisUtterance("I didn't catch that, please say it again.");
+                const retry = new SpeechSynthesisUtterance(
+                  "I didn't catch that, please say it again."
+                );
                 retry.lang = "en-US";
-                retry.onend = () => { if (isMounted && !sessionEnded) interact(); };
+                retry.onend = () => {
+                  if (isMounted && !sessionEnded) interact();
+                };
                 window.speechSynthesis.speak(retry);
               }
             })
             .catch((error) => {
               console.error("Error sending transcript:", error);
+              setStatusText('Error processing request');
             });
         };
 
         recognition.onerror = (event) => {
           console.error("Speech recognition error:", event.error);
           setRecording(false);
+          setStatusText('Error with speech recognition');
         };
 
         recognition.onend = () => {
           console.log("Speech recognition ended.");
           setRecording(false);
           if (!recognized && isMounted && !sessionEnded) {
-            const retry = new SpeechSynthesisUtterance("I didn't catch that, please say it again.");
+            const retry = new SpeechSynthesisUtterance(
+              "I didn't catch that, please say it again."
+            );
             retry.lang = "en-US";
-            retry.onend = () => { if (isMounted && !sessionEnded) interact(); };
+            retry.onend = () => {
+              if (isMounted && !sessionEnded) interact();
+            };
             window.speechSynthesis.speak(retry);
           }
         };
 
-        // Start recognition and stop it after 10 seconds if still active.
         recognition.start();
         setTimeout(() => {
           if (recognition && !recognized) {
@@ -132,32 +153,36 @@ function KidMode({ switchToParent }) {
         }, 10000);
       };
 
-      // Speak the greeting.
       window.speechSynthesis.speak(greeting);
     }
 
-    // Begin the interaction cycle when KidMode mounts.
     interact();
 
     return () => {
-      isMounted = false; // Mark component as unmounted
+      isMounted = false;
       document.body.removeEventListener("click", resumeAudio);
     };
   }, []);
 
   return (
-    <div style={{ textAlign: "center", marginTop: "50px", padding: "20px" }}>
-      <h1>Learning Mode</h1>
-      {/* Animated microphone icon */}
-      <div className="mic-container">
-        <span className={`mic-icon ${recording ? 'pulsate' : ''}`} role="img" aria-label="microphone">
+    <div className="kid-mode-container">
+      <h1 className="app-title">Learning Mode</h1>
+      <div className={`mic-container ${recording ? 'recording' : ''}`}>
+        <div className="wave"></div>
+        <div className="wave"></div>
+        <div className="wave"></div>
+        <span
+          className={`mic-icon ${recording ? 'pulsate' : ''}`}
+          role="img"
+          aria-label="microphone"
+        >
           🎤
         </span>
       </div>
-      <p>
-        SONIQUE
-      </p>
-      <button onClick={switchToParent}>Switch to Parent Mode</button>
+      {statusText && <p className="status-text">{statusText}</p>}
+      <button className="mode-switch-btn" onClick={switchToParent}>
+        Switch to Parent Mode
+      </button>
     </div>
   );
 }

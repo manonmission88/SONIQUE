@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from tinydb import TinyDB, Query
@@ -21,6 +21,11 @@ CORS(app)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Add route to serve uploaded files
+@app.route('/uploads/<path:filename>')
+def serve_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 db = TinyDB('books.json')
 Book = Query()
@@ -56,17 +61,22 @@ def upload_book():
         "content": text,
         "summary": "",
         "quizzes": [],
-        "attempts": []
+        "attempts": [],
+        "filepath": filepath  # Store the file path
     }
 
     db.insert(book)
 
     return jsonify({'message': 'Book uploaded successfully', 'id': next_id})
 
-@app.route('/all-books', methods=['GET'])
+@app.route('/books', methods=['GET'])
 def get_all_books():
     books = db.all()
-    return jsonify(books), 200
+    # Convert file paths to relative paths for security
+    for book in books:
+        if 'filepath' in book:
+            book['filepath'] = os.path.relpath(book['filepath'], app.config['UPLOAD_FOLDER'])
+    return jsonify(books)
 
 @app.route('/book-names', methods=['GET'])
 def get_book_names():

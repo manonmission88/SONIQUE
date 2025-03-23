@@ -1,27 +1,133 @@
-.mic-container {
+.kid-mode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 2rem;
+  background: linear-gradient(135deg, #1a73e8 0%, #6c63ff 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   margin: 20px;
+  color: white;
+}
+
+.mic-container {
+  position: relative;
+  margin: 40px 0;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.mic-container:hover {
+  transform: scale(1.05);
 }
 
 .mic-icon {
-  font-size: 60px;
-  transition: transform 0.3s ease, opacity 0.3s ease;
+  font-size: 80px;
+  transition: all 0.3s ease;
+  cursor: pointer;
 }
 
 .pulsate {
-  animation: pulsate 1s infinite;
+  animation: pulsate 1.5s ease-in-out infinite;
+}
+
+.wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150px;
+  height: 150px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.recording .wave {
+  animation: wave 2s linear infinite;
+}
+
+.recording .wave:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.recording .wave:nth-child(3) {
+  animation-delay: 1s;
 }
 
 @keyframes pulsate {
   0% {
     transform: scale(1);
     opacity: 1;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
   }
   50% {
     transform: scale(1.2);
-    opacity: 0.7;
+    opacity: 0.8;
+    text-shadow: 0 0 40px rgba(255, 255, 255, 0.8);
   }
   100% {
     transform: scale(1);
     opacity: 1;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
   }
+}
+
+@keyframes wave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+.mode-switch-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+}
+
+.mode-switch-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.status-text {
+  font-size: 1.5em;
+  margin: 20px 0;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeInUp 0.5s forwards;
+}
+
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-title {
+  font-size: 3em;
+  font-weight: bold;
+  margin-bottom: 20px;
+  background: linear-gradient(120deg, #ffffff, #e0e0e0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
