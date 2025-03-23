@@ -6,319 +6,584 @@
 //
 
 import SwiftUI
+import Speech
+import AVFoundation
+import UniformTypeIdentifiers
+
+class SpeechManager: ObservableObject {
+    let synthesizer = AVSpeechSynthesizer()
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
+    private var silenceTimer: Timer?
+    
+    @Published var recognizedText: String = ""
+    @Published var isRecognizing: Bool = false
+    @Published var showAlert: Bool = false
+    @Published var alertMessage: String = ""
+    @Published var isKidMode: Bool = true
+    
+    init() {
+        // Start in kid mode by default
+        isKidMode = true
+    }
+    
+    func requestPermission() {
+        SFSpeechRecognizer.requestAuthorization { authStatus in
+            DispatchQueue.main.async {
+                switch authStatus {
+                case .authorized:
+                    // Welcome message and start listening
+                    self.speakText("Welcome to Sonique! How can I help you?")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        self.startListening()
+                    }
+                case .denied:
+                    self.showAlert = true
+                    self.alertMessage = "Speech recognition permission denied. Please enable it in Settings."
+                case .restricted:
+                    self.showAlert = true
+                    self.alertMessage = "Speech recognition is restricted on this device."
+                case .notDetermined:
+                    print("Speech recognition not determined.")
+                @unknown default:
+                    self.showAlert = true
+                    self.alertMessage = "Unknown speech recognition authorization status."
+                }
+            }
+        }
+    }
+    
+    private func startSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+            self?.stopListening()
+        }
+    }
+    
+    func startListening() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            showAlert = true
+            alertMessage = "Speech recognizer is not available."
+            return
+        }
+        
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            showAlert = true
+            alertMessage = "Audio Session error: \(error.localizedDescription)"
+            return
+        }
+        
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let inputNode = audioEngine.inputNode
+        
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputNode.outputFormat(forBus: 0)) { buffer, _ in
+            request.append(buffer)
+        }
+        
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+            DispatchQueue.main.async {
+                self.isRecognizing = true
+                self.recognizedText = "Listening..."
+                self.startSilenceTimer()
+            }
+        } catch {
+            showAlert = true
+            alertMessage = "Audio Engine error: \(error.localizedDescription)"
+            return
+        }
+        
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let result = result {
+                DispatchQueue.main.async {
+                    self.recognizedText = result.bestTranscription.formattedString
+                    // Reset silence timer when speech is detected
+                    self.startSilenceTimer()
+                }
+            }
+            
+            if error != nil || result?.isFinal == true {
+                self.stopListening()
+            }
+        }
+    }
+    
+    func stopListening() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionTask?.cancel()
+        
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Error deactivating audio session: \(error.localizedDescription)")
+        }
+        
+        DispatchQueue.main.async {
+            self.isRecognizing = false
+        }
+    }
+    
+    func speakText(_ text: String) {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true)
+        } catch {
+            showAlert = true
+            alertMessage = "Audio Session error: \(error.localizedDescription)"
+            return
+        }
+        
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = 0.5
+        utterance.pitchMultiplier = 1.2
+        synthesizer.speak(utterance)
+    }
+    
+    func toggleMode() {
+        isKidMode.toggle()
+        let message = "Switched to \(isKidMode ? "Kid" : "Parent") Mode"
+//        speakText(message)
+    }
+}
+
+class CustomFileManager: ObservableObject {
+    @Published var selectedFile: URL?
+    @Published var fileContent: String = ""
+    @Published var isFileSelected: Bool = false
+    @Published var showAlert: Bool = false
+    @Published var alertMessage: String = ""
+    @Published var uploadedFiles: [(url: URL, date: Date)] = []
+    
+    func loadFile(from url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+            if let content = String(data: data, encoding: .utf8) {
+                DispatchQueue.main.async {
+                    self.fileContent = content
+                    self.selectedFile = url
+                    self.isFileSelected = true
+                    if !self.uploadedFiles.contains(where: { $0.url == url }) {
+                        self.uploadedFiles.append((url: url, date: Date()))
+                    }
+                }
+            }
+        } catch {
+            showAlert = true
+            alertMessage = "Error loading file: \(error.localizedDescription)"
+        }
+    }
+    
+    func removeFile(_ url: URL) {
+        uploadedFiles.removeAll { $0.url == url }
+        if selectedFile == url {
+            selectedFile = nil
+            fileContent = ""
+            isFileSelected = false
+        }
+    }
+    
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
 
 struct ContentView: View {
-    @State private var isKidsMode: Bool = true
+    @StateObject private var speechManager = SpeechManager()
+    @StateObject private var fileManager = CustomFileManager()
     @State private var showingDocumentPicker = false
-    @State private var switcherOffset: CGFloat = 0
-    
-    // Refined color scheme
-    let gradientTop = Color(hex: "4F46E5")    // Indigo
-    let gradientMiddle = Color(hex: "3B82F6")  // Blue
-    let gradientBottom = Color(hex: "60A5FA")  // Light Blue
-    let accentColor = Color.white
+    @State private var isPressed = false
+    @State private var selectedFileIndex: Int?
+    @State private var showingAllFiles = false
     
     var body: some View {
-        ZStack {
-            // Rich gradient background
+        VStack(spacing: 20) {
+            // Simplified Mode Toggle Button
+            Button(action: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    speechManager.toggleMode()
+                }
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: speechManager.isKidMode ? "person.fill" : "person.2.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                    
+                    Text(speechManager.isKidMode ? "Kid Mode" : "Parent Mode")
+                        .font(.system(size: 17, weight: .bold))
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 25)
+                        .fill(speechManager.isKidMode ? Color.blue : Color.green)
+                        .shadow(color: speechManager.isKidMode ? Color.blue.opacity(0.3) : Color.green.opacity(0.3), radius: 10)
+                )
+                .foregroundColor(.white)
+            }
+            .buttonStyle(PressableButtonStyle(isPressed: $isPressed))
+            .accessibilityLabel("Mode toggle button")
+            .accessibilityHint("Double tap to switch between kid and parent mode")
+            .padding(.top, 20)
+            
+            Text("Sonique")
+                .font(.system(size: 45, weight: .bold))
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            speechManager.isKidMode ? Color.blue : Color.green,
+                            speechManager.isKidMode ? Color.blue.opacity(0.7) : Color.green.opacity(0.7)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .padding(.top, 10)
+                .accessibilityAddTraits(.isHeader)
+            
+            // File Selection Button (Only in Parent Mode)
+            if !speechManager.isKidMode {
+                Button(action: {
+                    showingDocumentPicker = true
+                }) {
+                    HStack {
+                        Image(systemName: "doc.badge.plus")
+                        Text("Upload New Content")
+                    }
+                    .font(.system(size: 18))
+                    .padding()
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                    .shadow(color: Color.orange.opacity(0.3), radius: 10)
+                }
+                .accessibilityLabel("Upload new content button")
+                .accessibilityHint("Double tap to choose a new file to upload")
+            }
+            
+            // Display Area (Uploaded Content)
+            if !speechManager.isKidMode && fileManager.isFileSelected {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Uploaded Content:")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.gray)
+                    
+                    ScrollView {
+                        if !fileManager.fileContent.isEmpty {
+                            Text(fileManager.fileContent)
+                                .font(.system(size: 16))
+                                .foregroundColor(.black)
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(10)
+                        }
+                    }
+                    .frame(maxHeight: 200)
+                }
+                .padding(.horizontal)
+            }
+            
+            // Uploaded Files Bar (Only in Parent Mode)
+            if !speechManager.isKidMode {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("All Uploaded Files")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            Text("\(fileManager.uploadedFiles.count) files")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                            
+                            Button(action: {
+                                showingAllFiles = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "list.bullet")
+                                    Text("View All")
+                                }
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    if !fileManager.uploadedFiles.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(fileManager.uploadedFiles, id: \.url) { file in
+                                    FileCard(
+                                        fileName: file.url.lastPathComponent,
+                                        date: file.date,
+                                        isSelected: fileManager.selectedFile == file.url,
+                                        onTap: {
+                                            fileManager.loadFile(from: file.url)
+                                            selectedFileIndex = fileManager.uploadedFiles.firstIndex(where: { $0.url == file.url })
+                                        },
+                                        onDelete: {
+                                            fileManager.removeFile(file.url)
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            Spacer()
+            
+            // Speech Recognition Display (Only in Kid Mode)
+            if speechManager.isKidMode {
+                Text(speechManager.recognizedText)
+                    .font(.system(size: 24))
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(15)
+                    .padding(.horizontal)
+            }
+            
+            // Microphone Button with Overlay (Only in Kid Mode)
+            if speechManager.isKidMode {
+                ZStack {
+                    Circle()
+                        .fill(Color.white)
+                        .shadow(color: .gray, radius: 5)
+                        .frame(width: 120, height: 120)
+                    
+                    Button(action: {
+                        if speechManager.isRecognizing {
+                            speechManager.stopListening()
+                        } else {
+                            speechManager.startListening()
+                        }
+                    }) {
+                        ZStack {
+                            Circle()
+                                .fill(speechManager.isRecognizing ? Color.red.opacity(0.1) : Color.blue.opacity(0.1))
+                                .frame(width: 110, height: 110)
+                            
+                            Image(systemName: speechManager.isRecognizing ? "mic.fill" : "mic.circle.fill")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 60, height: 60)
+                                .foregroundColor(speechManager.isRecognizing ? .red : .blue)
+                            
+                            if speechManager.isRecognizing {
+                                Circle()
+                                    .stroke(Color.red, lineWidth: 3)
+                                    .frame(width: 110, height: 110)
+                                    .scaleEffect(1.2)
+                                    .opacity(0.5)
+                                    .animation(Animation.easeOut(duration: 1).repeatForever(autoreverses: true), value: speechManager.isRecognizing)
+                            }
+                        }
+                    }
+                    .accessibilityLabel(speechManager.isRecognizing ? "Stop listening" : "Start listening")
+                    .accessibilityHint(speechManager.isRecognizing ? "Double tap to stop recording" : "Double tap to start recording")
+                }
+                .padding(.bottom, 50)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
             LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: gradientTop, location: 0.0),
-                    .init(color: gradientMiddle, location: 0.5),
-                    .init(color: gradientBottom, location: 1.0)
+                gradient: Gradient(colors: [
+                    speechManager.isKidMode ? Color.blue.opacity(0.1) : Color.green.opacity(0.1),
+                    speechManager.isKidMode ? Color.blue.opacity(0.05) : Color.green.opacity(0.05)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .ignoresSafeArea()
-            
-            // Subtle pattern overlay
-            ZStack {
-                Circle()
-                    .fill(.white.opacity(0.05))
-                    .frame(width: 300, height: 300)
-                    .blur(radius: 50)
-                    .offset(x: -150, y: -100)
-                
-                Circle()
-                    .fill(.white.opacity(0.05))
-                    .frame(width: 300, height: 300)
-                    .blur(radius: 50)
-                    .offset(x: 150, y: 300)
+        )
+        .alert("Error", isPresented: $speechManager.showAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(speechManager.alertMessage)
+        }
+        .fileImporter(
+            isPresented: $showingDocumentPicker,
+            allowedContentTypes: [.text, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let files):
+                if let file = files.first {
+                    fileManager.loadFile(from: file)
+                }
+            case .failure(let error):
+                fileManager.showAlert = true
+                fileManager.alertMessage = "Error selecting file: \(error.localizedDescription)"
             }
-            .ignoresSafeArea()
-            
-            VStack(spacing: 25) {
-                // Enhanced App Title with icon
-                HStack(spacing: 15) {
-                    Image(systemName: "soundwaves")
-                        .font(.system(size: 40))
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [.white, .white.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    Text("Sonique")
-                        .font(.system(size: 50, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            .linearGradient(
-                                colors: [.white, .white.opacity(0.9)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
-                .padding(.top, 40)
-                .shadow(color: .black.opacity(0.2), radius: 2)
-                
-                // Enhanced Mode Switcher with better contrast
-                ZStack {
-                    // Background capsule - lighter for better contrast
-                    RoundedRectangle(cornerRadius: 30)
-                        .fill(.white.opacity(0.2))
-                        .background(
-                            .ultraThinMaterial,
-                            in: RoundedRectangle(cornerRadius: 30)
-                        )
-                        .frame(width: 300, height: 70)
-                        .shadow(color: .black.opacity(0.1), radius: 10)
-                    
-                    // Selection indicator - more visible
-                    RoundedRectangle(cornerRadius: 25)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.4),
-                                    .white.opacity(0.3)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 145, height: 60)
-                        .shadow(color: .black.opacity(0.1), radius: 5)
-                        .offset(x: switcherOffset)
-                    
-                    // Mode labels with enhanced visibility
-                    HStack(spacing: 10) {
-                        // Student Mode Button
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isKidsMode = true
-                                switcherOffset = -75
-                            }
-                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        }) {
-                            HStack(spacing: 10) {
-                                ZStack {
-                                    Circle()
-                                        .fill(isKidsMode ? .white.opacity(0.2) : .clear)
-                                        .frame(width: 36, height: 36)
-                                    
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.system(size: 24))
-                                        .symbolRenderingMode(.hierarchical)
-                                        .foregroundStyle(isKidsMode ? .white : .white.opacity(0.7))
-                                }
-                                
-                                Text("Student")
-                                    .font(.system(size: 16, weight: .semibold))
-                            }
-                            .frame(width: 145)
-                            .foregroundColor(isKidsMode ? .white : .white.opacity(0.7))
-                        }
-                        
-                        // Parent Mode Button
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isKidsMode = false
-                                switcherOffset = 75
-                            }
-                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        }) {
-                            HStack(spacing: 10) {
-                                ZStack {
-                                    Circle()
-                                        .fill(!isKidsMode ? .white.opacity(0.2) : .clear)
-                                        .frame(width: 36, height: 36)
-                                    
-                                    Image(systemName: "person.2.circle.fill")
-                                        .font(.system(size: 24))
-                                        .symbolRenderingMode(.hierarchical)
-                                        .foregroundStyle(!isKidsMode ? .white : .white.opacity(0.7))
-                                }
-                                
-                                Text("Parent")
-                                    .font(.system(size: 16, weight: .semibold))
-                            }
-                            .frame(width: 145)
-                            .foregroundColor(!isKidsMode ? .white : .white.opacity(0.7))
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 35)
-                        .fill(.white.opacity(0.1))
-                        .shadow(color: .black.opacity(0.1), radius: 10)
-                )
-                .padding(.top, 20)
-                
-                Spacer()
-                
-                // Enhanced Main Action Buttons
-                if isKidsMode {
-                    // Student Mode: Enhanced Voice Input
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                    }) {
-                        ZStack {
-                            // Keep existing glass effect background
-                            Circle()
-                                .fill(.white.opacity(0.15))
-                                .background(
-                                    .ultraThinMaterial,
-                                    in: Circle()
-                                )
-                                .frame(width: 220, height: 220)
-                            
-                            // Animated ring
-                            Circle()
-                                .stroke(.white.opacity(0.3), lineWidth: 2)
-                                .frame(width: 220, height: 220)
-                            
-                            VStack(spacing: 20) {
-                                // New dynamic icon combination
-                                ZStack {
-                                    Image(systemName: "waveform.and.magnifyingglass")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 90, height: 90)
-                                        .foregroundStyle(
-                                            .linearGradient(
-                                                colors: [.white, .white.opacity(0.8)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                }
-                                
-                                Text("Listen & Learn")
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                            }
-                        }
-                    }
-                } else {
-                    // Parent Mode: Enhanced Upload
-                    Button(action: {
-                        showingDocumentPicker = true
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    }) {
-                        ZStack {
-                            // Keep existing glass effect background
-                            Circle()
-                                .fill(.white.opacity(0.15))
-                                .background(
-                                    .ultraThinMaterial,
-                                    in: Circle()
-                                )
-                                .frame(width: 220, height: 220)
-                            
-                            // Animated ring
-                            Circle()
-                                .stroke(.white.opacity(0.3), lineWidth: 2)
-                                .frame(width: 220, height: 220)
-                            
-                            VStack(spacing: 20) {
-                                // New dynamic icon combination
-                                ZStack {
-                                    Image(systemName: "doc.viewfinder")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 90, height: 90)
-                                        .foregroundStyle(
-                                            .linearGradient(
-                                                colors: [.white, .white.opacity(0.8)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                }
-                                
-                                Text("Upload Content")
-                                    .font(.title2.bold())
-                                    .foregroundColor(.white)
-                            }
-                        }
-                    }
-                }
-                
-                Spacer()
-            }
-            .padding()
+        }
+        .alert("File Error", isPresented: $fileManager.showAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(fileManager.alertMessage)
         }
         .onAppear {
-            switcherOffset = isKidsMode ? -75 : 75
+            speechManager.requestPermission()
         }
-        .sheet(isPresented: $showingDocumentPicker) {
-            DocumentPicker(isPresented: $showingDocumentPicker) { url in
-                print("Selected PDF: \(url)")
-            }
+        .sheet(isPresented: $showingAllFiles) {
+            AllFilesView(fileManager: fileManager)
         }
     }
 }
 
-// Custom Toggle Style
-struct CustomToggleStyle: ToggleStyle {
+// Custom Button Style for Press Animation
+struct PressableButtonStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+    
     func makeBody(configuration: Configuration) -> some View {
-        RoundedRectangle(cornerRadius: 40)
-            .fill(configuration.isOn ? Color(hex: "4158D0") : Color(hex: "C850C0"))
-            .frame(width: 75, height: 40)
-            .overlay(
-                Circle()
-                    .fill(.white)
-                    .shadow(radius: 1)
-                    .frame(width: 32, height: 32)
-                    .offset(x: configuration.isOn ? 18 : -18)
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { newValue in
+                isPressed = newValue
+            }
+    }
+}
+
+// File Card View for the horizontal scroll
+struct FileCard: View {
+    let fileName: String
+    let date: Date
+    let isSelected: Bool
+    let onTap: () -> Void
+    let onDelete: () -> Void
+    
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .foregroundColor(isSelected ? .white : .gray)
+                    
+                    Text(fileName)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(isSelected ? .white : .gray)
+                        .lineLimit(1)
+                    
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(isSelected ? .white : .gray)
+                    }
+                }
+                
+                Text(dateFormatter.string(from: date))
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .gray.opacity(0.8))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(isSelected ? Color.blue : Color.gray.opacity(0.2))
             )
-            .onTapGesture {
-                withAnimation(.spring()) {
-                    configuration.isOn.toggle()
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// New view for displaying all files
+struct AllFilesView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var fileManager: CustomFileManager
+    @State private var selectedFile: URL?
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(fileManager.uploadedFiles, id: \.url) { file in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(.blue)
+                            
+                            Text(file.url.lastPathComponent)
+                                .font(.system(size: 16, weight: .medium))
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                fileManager.removeFile(file.url)
+                            }) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        
+                        HStack {
+                            Text(fileManager.formatDate(file.date))
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                selectedFile = file.url
+                                fileManager.loadFile(from: file.url)
+                            }) {
+                                Text("View Content")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
             }
-    }
-}
-
-// Helper extension for hex colors
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (1, 1, 1, 0)
+            .navigationTitle("All Uploaded Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue:  Double(b) / 255,
-            opacity: Double(a) / 255
-        )
     }
 }
 
@@ -328,38 +593,3 @@ struct ContentView_Previews: PreviewProvider {
     }
 }
 
-// Add this DocumentPicker struct
-struct DocumentPicker: UIViewControllerRepresentable {
-    @Binding var isPresented: Bool
-    let onDocumentPicked: (URL) -> Void
-    
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf])
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: DocumentPicker
-        
-        init(_ parent: DocumentPicker) {
-            self.parent = parent
-        }
-        
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            parent.onDocumentPicked(url)
-            parent.isPresented = false
-        }
-        
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            parent.isPresented = false
-        }
-    }
-}
