@@ -3,6 +3,9 @@
 ## About the Project
 Sonique is an AI-powered, voice-interactive learning companion designed for blind and visually impaired children. It transforms caregiver-uploaded educational materials into engaging audio lessons, enabling children to learn and interact using natural voice commands. Our mission is to make education accessible, independent, and joyful—without relying on screens or text.
 
+## IOS APP DEMO
+![Demo GIF](https://github.com/manonmission88/SONIQUE/blob/main/SoniqueFrontend/Sonique/Simulator%20Screen%20Recording%20-%20iPhone%2016%20Pro%20-%202025-03-23%20at%2009.31.38.gif)
+
 ## Features
 - **Caregiver Upload Portal:** Upload PDF files as course materials and manage them in a library.
 - **AI-Generated Quizzes:** Generate practice quizzes from uploaded content using the Gemini API.
