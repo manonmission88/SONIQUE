@@ -23,5 +23,5 @@ Sonique is an AI-powered, voice-interactive learning companion designed for blin
    ```bash
    git clone https://github.com/yourusername/sonique.git
    frontend : cd sonique & cd SoniqueFrontend/sonique & npm run dev 
-    backend : cd sonique & cd SoniqueBackend/python3 app.py
+    backend : cd sonique & python3 SoniqueBackend/app.py
     ios app : ContentView.swift (preview content) 
